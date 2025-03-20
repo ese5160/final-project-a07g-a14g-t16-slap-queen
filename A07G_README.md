@@ -70,105 +70,181 @@
 
 ## 4. Understanding the Starter Code
 
-### UART Implementation Analysis
+### Question 1: InitializeSerialConsole() Function
 
-#### Question 1: InitializeSerialConsole() Function
-`InitializeSerialConsole()` configures the UART interface for serial communication. It:
-- Initializes the UART hardware at 115200 baud with 8 data bits, no parity, and 1 stop bit
-- Creates two circular buffers: `cbufRx` for receiving characters and `cbufTx` for transmitting characters
-- Sets up the interrupt handlers for UART events
-- Registers callback functions for character reception and transmission
+The `InitializeSerialConsole()` function is responsible for initializing UART communication and associated ring buffers. Specifically, it:
+- Initializes receive (RX) and transmit (TX) ring buffers
+- Configures UART (SERCOM4) parameters, setting it to 115200 baud, 8 data bits, no parity, 1 stop bit (8N1)
+- Registers UART read and write callback functions
+- Begins the first read operation, starting the continuous character reading process
 
-The variables `cbufRx` and `cbufTx` are circular buffer data structures used to store received and transmitted characters respectively.
+`cbufRx` and `cbufTx` are ring buffer handles of type `cbuf_handle_t`, which is essentially a pointer to a `circular_buf_t` structure. The `circular_buf_t` is a structure type defined in the `circular_buffer.c` file.
 
-#### Question 2: Circular Buffer Initialization
-`cbufRx` and `cbufTx` are initialized using the `circular_buffer_init()` function, which allocates memory for the buffer and sets initial read/write pointers.
+### Question 2: Circular Buffer Initialization
 
-The circular buffer implementation is defined in `circular_buffer.c` and the corresponding header file `circular_buffer.h`.
+`cbufRx` and `cbufTx` are initialized using the following code:
 
-#### Question 3: Character Storage Arrays
-The actual character data is stored in arrays defined within the circular buffer structure:
-- For `cbufRx`: `rxBuffer` with a size of `SERIAL_BUFFER_SIZE` (typically 64 bytes)
-- For `cbufTx`: `txBuffer` with a size of `SERIAL_BUFFER_SIZE` (typically 64 bytes)
-
-#### Question 4: UART Interrupt Definitions
-The UART interrupts are defined in the `sercom3_handler()` function in the `uart_driver.c` file. This handler is triggered when:
-- A character is received (RX_COMPLETE)
-- A character has been transmitted (TX_COMPLETE)
-- The transmit buffer is empty (TX_EMPTY)
-
-#### Question 5: UART Callback Functions
-The callback functions are:
-1. For character reception (RX): `SerialConsoleRxCallback()`
-2. For character transmission (TX): `SerialConsoleTxCallback()`
-
-#### Question 6: Callback Function Operations
-- `SerialConsoleRxCallback()`:
-  - Is triggered when a character is received
-  - Reads the character from the UART hardware
-  - Adds the character to the `cbufRx` circular buffer
-  - Echoes the character back by adding it to the `cbufTx` buffer
-
-- `SerialConsoleTxCallback()`:
-  - Is triggered when a character has been sent
-  - Checks if there are more characters in the `cbufTx` buffer
-  - If yes, it gets the next character and sends it via UART
-  - If no, it disables the TX_EMPTY interrupt until more characters are added
-
-
-#### Question 7: UART Receive Flow
-
-```
-User types character on terminal
-    ↓
-UART Hardware receives character and triggers RX_COMPLETE interrupt
-    ↓
-sercom3_handler() detects RX_COMPLETE and calls SerialConsoleRxCallback()
-    ↓
-SerialConsoleRxCallback() reads character from UART hardware
-    ↓
-Character is added to cbufRx using circular_buffer_write()
-    ↓
-Character is also added to cbufTx to echo it back
-    ↓
-SerialConsoleRxCallback() triggers TX if needed by enabling TX_EMPTY interrupt
-    ↓
-Character is now available in cbufRx for the application to read using SerialConsoleReadCharacter()
+```c
+cbufRx = circular_buf_init((uint8_t *)rxCharacterBuffer, RX_BUFFER_SIZE);
+cbufTx = circular_buf_init((uint8_t *)txCharacterBuffer, TX_BUFFER_SIZE);
 ```
 
-#### Question 8: UART Transmit Flow
+The ring buffer-related functions and data structures come from the following files:
+- `circular_buffer.h` - Defines the ring buffer API interface
+- `circular_buffer.c` - Implements the specific functionality of the ring buffer
 
-```
-Application calls SerialConsoleWriteString() with a string
-    ↓
-Each character of the string is added to cbufTx using circular_buffer_write()
-    ↓
-If UART is idle, the TX_EMPTY interrupt is enabled
-    ↓
-TX_EMPTY interrupt triggers sercom3_handler()
-    ↓
-sercom3_handler() calls SerialConsoleTxCallback()
-    ↓
-SerialConsoleTxCallback() reads the next character from cbufTx
-    ↓
-Character is sent to UART hardware for transmission
-    ↓
-When transmission is complete, TX_COMPLETE interrupt is triggered
-    ↓
-Process repeats for next character until cbufTx is empty
-    ↓
-Characters appear on the terminal screen
+The `circular_buffer.c` file defines the `circular_buf_t` structure:
+
+```c
+struct circular_buf_t {
+    uint8_t * buffer;
+    size_t head;
+    size_t tail;
+    size_t max; //of the buffer
+    bool full;
+};
 ```
 
-#### Question 9: startTasks() Function
-The `startTasks()` function in `main.c` initializes and starts the FreeRTOS tasks:
+### Question 3: Character Storage Arrays
 
-- It creates the following tasks:
-  1. `vCommandConsoleTask`: Handles command line interface processing
-  2. `taskSystem`: Manages system-level operations
-  3. `taskPrint`: Handles periodic status printing
-  
-- Total number of tasks: 3
+RX and TX characters are stored in the following global arrays:
 
-- The function sets appropriate priorities for each task and provides stack sizes.
-- After creating the tasks, it starts the FreeRTOS scheduler using `vTaskStartScheduler()`.
+```c
+char rxCharacterBuffer[RX_BUFFER_SIZE]; // For storing received characters
+char txCharacterBuffer[TX_BUFFER_SIZE]; // For storing characters to be sent
+```
+
+The size of both arrays is determined by defined constants:
+```c
+#define RX_BUFFER_SIZE 512 // Receive buffer size is 512 bytes
+#define TX_BUFFER_SIZE 512 // Transmit buffer size is 512 bytes
+```
+
+These buffers are the base storage areas for the ring buffers, and the buffer pointers in the `cbufRx` and `cbufTx` ring buffer structures point to these arrays.
+
+### Question 4: UART Interrupt Definitions
+
+UART interrupts are handled through callback functions, which are defined in the `SerialConsole.c` file:
+
+```c
+void usart_read_callback(struct usart_module *const usart_module); // Read complete callback
+void usart_write_callback(struct usart_module *const usart_module); // Write complete callback
+```
+
+These callback functions are registered in the `configure_usart_callbacks()` function:
+
+```c
+static void configure_usart_callbacks(void)
+{
+    usart_register_callback(&usart_instance,
+                           usart_write_callback,
+                           USART_CALLBACK_BUFFER_TRANSMITTED);
+    usart_register_callback(&usart_instance,
+                           usart_read_callback,
+                           USART_CALLBACK_BUFFER_RECEIVED);
+    usart_enable_callback(&usart_instance, USART_CALLBACK_BUFFER_TRANSMITTED);
+    usart_enable_callback(&usart_instance, USART_CALLBACK_BUFFER_RECEIVED);
+}
+```
+
+### Question 5: UART Callback Functions
+
+#### a. A character is received? (RX)
+When a character is received, the `usart_read_callback` function is called. This function is marked in the code as "ToDo: Complete this function", and should be implemented to place the received character into the `cbufRx` ring buffer.
+
+#### b. A character has been sent? (TX)
+When a character has been sent, the `usart_write_callback` function is called. This function is already implemented and checks if `cbufTx` has more characters to send; if so, it continues sending the next character.
+
+### Question 6: Callback Function Operations
+
+The relationship between callbacks and ring buffers is as follows:
+
+For receiving characters (RX):
+- When a character is received via UART, it triggers `usart_read_callback`
+- This callback should store the received character in the `cbufRx` ring buffer
+- Then it should start the next character read to continuously receive characters
+
+For sending characters (TX):
+- When characters need to be sent, they are first added to the `cbufTx` ring buffer (via the `SerialConsoleWriteString` function)
+- If the UART transmitter is idle, a character is extracted from the buffer and transmission begins
+- When the character transmission is complete, it triggers `usart_write_callback`
+- This callback checks if the buffer has more characters; if so, it continues sending the next character, forming a chain of continuous transmission
+
+### Question 7: UART Receive Flow
+
+Program flow for UART receive:
+
+```
+User types a character in terminal
+    |
+    v
+UART hardware receives character
+    |
+    v
+Interrupt triggers, calls usart_read_callback
+    |
+    v
+Received character (latestRx) is added to cbufRx ring buffer
+    |
+    v
+Start next UART read operation
+    |
+    v
+Application retrieves character from cbufRx using SerialConsoleReadCharacter function
+```
+
+Key function calls:
+- During initialization: `usart_read_buffer_job(&usart_instance, (uint8_t *)&latestRx, 1);` starts the first read
+- In the callback, latestRx should be added to cbufRx, then `usart_read_buffer_job` should be called again to continue reading
+- SerialConsoleReadCharacter uses `circular_buf_get(cbufRx, (uint8_t *)rxChar)` to retrieve characters from the ring buffer
+
+### Question 8: UART Transmit Flow
+
+Program flow for UART transmission:
+
+```
+Application calls SerialConsoleWriteString
+    |
+    v
+Each character in the string is added to cbufTx ring buffer
+    |
+    v
+If UART transmitter is idle, extract a character (latestTx) from cbufTx and begin transmission
+    |
+    v
+UART hardware sends character
+    |
+    v
+Transmission complete, interrupt triggers, calls usart_write_callback
+    |
+    v
+Extract next character from cbufTx (if available) and continue transmission
+    |
+    v
+Character is displayed on terminal
+```
+
+Key function calls:
+- In SerialConsoleWriteString: `circular_buf_put(cbufTx, string[iter]);` adds characters to the buffer
+- If UART is idle: `circular_buf_get(cbufTx, (uint8_t *)&latestTx);` and `usart_write_buffer_job(&usart_instance, (uint8_t *)&latestTx, 1);` start transmission
+- In the callback: the above two operations are performed again to continue sending the next character
+
+### Question 9: startTasks() Function
+
+The `StartTasks()` function is used to initialize various tasks (threads) in the system. According to the provided code, this function:
+
+1. Prints the current heap space size
+2. Creates the Command Line Interface (CLI) task
+3. Prints the heap space size again after creating the CLI task
+
+From the code, it's evident that only one thread is created:
+```c
+if (xTaskCreate(vCommandConsoleTask, "CLI_TASK", CLI_TASK_SIZE, NULL, CLI_PRIORITY, &cliTaskHandle) != pdPASS)
+{
+    SerialConsoleWriteString("ERR: CLI task could not be initialized!\r\n");
+}
+```
+
+This thread is the CLI task (Command Line Interface), responsible for handling commands input by users through the serial terminal.
+
+In summary, the `StartTasks()` function creates 1 thread, which is the CLI task thread.
