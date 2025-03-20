@@ -116,7 +116,7 @@ The callback functions are:
   - If no, it disables the TX_EMPTY interrupt until more characters are added
 
 
-### Question 7: UART Receive Flow
+#### Question 7: UART Receive Flow
 
 ```
 User types character on terminal
@@ -136,7 +136,7 @@ SerialConsoleRxCallback() triggers TX if needed by enabling TX_EMPTY interrupt
 Character is now available in cbufRx for the application to read using SerialConsoleReadCharacter()
 ```
 
-### Question 8: UART Transmit Flow
+#### Question 8: UART Transmit Flow
 
 ```
 Application calls SerialConsoleWriteString() with a string
@@ -160,7 +160,7 @@ Process repeats for next character until cbufTx is empty
 Characters appear on the terminal screen
 ```
 
-### Question 9: startTasks() Function
+#### Question 9: startTasks() Function
 The `startTasks()` function in `main.c` initializes and starts the FreeRTOS tasks:
 
 - It creates the following tasks:
@@ -172,9 +172,3 @@ The `startTasks()` function in `main.c` initializes and starts the FreeRTOS task
 
 - The function sets appropriate priorities for each task and provides stack sizes.
 - After creating the tasks, it starts the FreeRTOS scheduler using `vTaskStartScheduler()`.
-
-## Conclusion
-
-The starter code provides a robust foundation for UART communication using circular buffers and interrupt-driven I/O. It also establishes a basic FreeRTOS task structure for command processing and system management.
-
-The circular buffer implementation enables efficient handling of asynchronous UART communication, allowing the application to read and write characters without blocking or losing data.
