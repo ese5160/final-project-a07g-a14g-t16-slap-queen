@@ -70,8 +70,6 @@
 
 ## Understanding the Starter Code
 
-The starter code initializes the UART at 115200 baud 8N1, starts the FreeRTOS kernel, and implements a character echo system through ring buffers.
-
 ### UART Implementation Analysis
 
 #### Question 1: InitializeSerialConsole() Function
@@ -117,9 +115,8 @@ The callback functions are:
   - If yes, it gets the next character and sends it via UART
   - If no, it disables the TX_EMPTY interrupt until more characters are added
 
-## Program Flow Diagrams
 
-### UART Receive Flow
+### Question 7: UART Receive Flow
 
 ```
 User types character on terminal
@@ -139,7 +136,7 @@ SerialConsoleRxCallback() triggers TX if needed by enabling TX_EMPTY interrupt
 Character is now available in cbufRx for the application to read using SerialConsoleReadCharacter()
 ```
 
-### UART Transmit Flow
+### Question 8: UART Transmit Flow
 
 ```
 Application calls SerialConsoleWriteString() with a string
@@ -163,9 +160,7 @@ Process repeats for next character until cbufTx is empty
 Characters appear on the terminal screen
 ```
 
-### FreeRTOS Tasks
-
-#### Question 7: startTasks() Function
+### Question 9: startTasks() Function
 The `startTasks()` function in `main.c` initializes and starts the FreeRTOS tasks:
 
 - It creates the following tasks:
