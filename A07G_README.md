@@ -68,7 +68,7 @@
 ![Wi-Fi Communication Task State Machine](images/Wi-Fi-Task.png)
 
 
-## Understanding the Starter Code
+## 4. Understanding the Starter Code
 
 ### UART Implementation Analysis
 
