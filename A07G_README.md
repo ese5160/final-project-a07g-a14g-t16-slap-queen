@@ -258,3 +258,6 @@ In summary, the `StartTasks()` function creates 1 thread, which is the CLI task 
 ## 5.Complete the CLI
 
 - Uploaded in the files
+
+## 6. Add CLI commands
+## 7. Using Percepio
