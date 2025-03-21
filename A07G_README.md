@@ -45,30 +45,30 @@
    - Transmission of diagnostic data
    - Receiving remote control commands
 
-## 2. Software Task Block Diagram
+### Software Task Block Diagram
 
 ![Software Task Block Diagram](images/Software-Task.png)
 
-## 3. Task State Machine Diagrams
+### Task State Machine Diagrams
 
-### System Control Task State Machine
+#### System Control Task State Machine
 
 ![System Control Task State Machine](images/System-Control.png)
 
-### Sensor Task State Machine
+#### Sensor Task State Machine
 
 ![Sensor Task State Machine](images/Sensor-Task.png)
 
-### Heater Control Task State Machine
+#### Heater Control Task State Machine
 
 ![Heater Control Task State Machine](images/Heater-Control.png)
 
-### Wi-Fi Communication Task State Machine
+#### Wi-Fi Communication Task State Machine
 
 ![Wi-Fi Communication Task State Machine](images/Wi-Fi-Task.png)
 
 
-## 4. Understanding the Starter Code
+## 2. Understanding the Starter Code
 
 ### Question 1: InitializeSerialConsole() Function
 
@@ -248,3 +248,7 @@ if (xTaskCreate(vCommandConsoleTask, "CLI_TASK", CLI_TASK_SIZE, NULL, CLI_PRIORI
 This thread is the CLI task (Command Line Interface), responsible for handling commands input by users through the serial terminal.
 
 In summary, the `StartTasks()` function creates 1 thread, which is the CLI task thread.
+
+## 3.Debug Logger Module
+
+![Debug logger](images/Debug-logger.png)

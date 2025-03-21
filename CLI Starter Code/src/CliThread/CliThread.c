@@ -242,3 +242,5 @@ BaseType_t CLI_ResetDevice(int8_t *pcWriteBuffer, size_t xWriteBufferLen, const 
     system_reset();
     return pdFALSE;
 }
+
+
