@@ -147,12 +147,34 @@ void setLogLevel(enum eDebugLogLevels debugLevel)
 }
 
 /**
- * @brief Logs a message at the specified debug level.
+ * @brief Logs a message at the given level using a variable argument list.
+ * @param[in] level  The log level of this message.
+ * @param[in] format A printf-style format string.
+ * @param[in] ...    Additional arguments for formatting.
+ *
+ * If @p level is below the current log level or if the log level is LOG_OFF_LVL,
+ * nothing is printed. Otherwise, the message is formatted via vsnprintf and
+ * sent out through the serial console.
  */
 void LogMessage(enum eDebugLogLevels level, const char *format, ...)
 {
-    // Todo: Implement Debug Logger
-	// More detailed descriptions are in header file
+	//Check if message meets current logging level
+	if (level < currentDebugLevel || currentDebugLevel == LOG_OFF_LVL)
+	{
+		return;
+	}
+	
+	// Prepare a buffer for the formatted output
+	char buffer[256];
+	memset(buffer, 0, sizeof(buffer));
+	
+	// Format the message with variable arguments
+	va_list args;
+	va_start(args, format);
+	vsnprintf(buffer, sizeof(buffer), format, args);
+	va_end(args);
+	
+	SerialConsoleWriteString(buffer);
 }
 
 /*
@@ -213,14 +235,23 @@ static void configure_usart_callbacks(void)
 
 /**************************************************************************/ 
 /**
- * @fn			void usart_read_callback(struct usart_module *const usart_module)
- * @brief		Callback called when the system finishes receives all the bytes requested from a UART read job
-		 Students to fill out. Please note that the code here is dummy code. It is only used to show you how some functions work.
- * @note
+ * @fn      void usart_read_callback(struct usart_module *const usart_module)
+ * @brief   Callback called when the system finishes receiving all bytes requested from a UART read job.
+ * @note    Students must fill out this function to store incoming characters in a ring buffer
+ *          and notify the CLI thread that data is available.
  *****************************************************************************/
 void usart_read_callback(struct usart_module *const usart_module)
 {
-	// ToDo: Complete this function 
+    // Put the newly received character (latestRx) into the ring buffer
+    circular_buf_put(cbufRx, (uint8_t)latestRx);
+
+    // Notify the CLI thread (or any task waiting) via a semaphore
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(xRxSemaphore, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+    // Re-initiate the next read operation so we continuously receive incoming bytes
+    usart_read_buffer_job(&usart_instance, (uint8_t *)&latestRx, 1);
 }
 
 /**************************************************************************/ 

@@ -72,13 +72,13 @@ int main(void)
 	 char string[] = "CLI starter code - ESE516\r\n";
 
 	 /*Simple DebugLogger Test*/
-	 setLogLevel(LOG_INFO_LVL);
-	 LogMessage(LOG_INFO_LVL, "%s", string);									  // Test
-	 setLogLevel(LOG_ERROR_LVL);												  // Sets the Debug Logger to only allow messages with LOG_ERROR_LVL or higher to be printed
-	 LogMessage(LOG_INFO_LVL, "Performing Temperature Test...\r\n");			  // This should NOT print
-	 LogMessage(LOG_FATAL_LVL, "Error! Temperature over %d Degrees!\r\n", 55); // This should print
-
-	 LogMessage(LOG_INFO_LVL, "ESE5160 CLI STARTER PROJECT STARTED\r\n");
+	 setLogLevel(LOG_ERROR_LVL);
+	 LogMessage(LOG_INFO_LVL, "Info: should NOT appear\r\n");					  // level=INFO < ERROR -> no output
+	 LogMessage(LOG_ERROR_LVL, "Error: should appear\r\n");			              // level=ERROR == ERROR -> output
+	 LogMessage(LOG_FATAL_LVL, "Fatal: definitely appears\r\n");                  // level=FATAL > ERROR -> output
+	 
+     setLogLevel(LOG_INFO_LVL);
+	 LogMessage(LOG_INFO_LVL, "Info: now appears\r\n");                           // level=INFO == INFO -> output
 
 	// Start FreeRTOS scheduler.
 	vTaskStartScheduler();

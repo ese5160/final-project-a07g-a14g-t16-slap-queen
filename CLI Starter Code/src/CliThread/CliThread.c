@@ -207,17 +207,38 @@ void vCommandConsoleTask(void *pvParameters)
     }
 }
 
-/**************************************************************************/ /**
- * @fn			void FreeRTOS_read(char* character)
- * @brief		STUDENTS TO COMPLETE. This function block the thread unless we received a character. How can we do this?
-                 There are multiple solutions! Check all the inter-thread communications available! See https://www.freertos.org/a00113.html
- * @details		STUDENTS TO COMPLETE.
- * @note
+/**
+ * @fn      static void FreeRTOS_read(char *character)
+ * @brief   Blocks the CLI thread until a character is available in the ring buffer.
+ * @note    Students must fill out this function to suspend until data arrives.
+ *          The old code had 'vTaskSuspend(NULL)', which should be removed.
  *****************************************************************************/
 static void FreeRTOS_read(char *character)
 {
-    // ToDo: Complete this function
-    vTaskSuspend(NULL); // We suspend ourselves. Please remove this when doing your code
+    // Wait (block) until the UART ISR (usart_read_callback) signals that a new char is available
+    if (xSemaphoreTake(xRxSemaphore, portMAX_DELAY) == pdTRUE)
+    {
+        // Now at least one character is guaranteed to be in the ring buffer
+        uint8_t tempChar = 0;
+        // Retrieve a byte from the ring buffer
+        if (circular_buf_get(cbufRx, &tempChar) == 0)
+        {
+            // Successfully got a character
+            *character = (char)tempChar;
+        }
+        else
+        {
+            // This should rarely happen if we always give the semaphore
+            // only after putting a new char. Just set to '\0' as fallback
+            *character = '\0';
+        }
+    }
+    else
+    {
+        // If somehow the semaphore wait timed out (portMAX_DELAY normally never times out)
+        // or an error occurred
+        *character = '\0';
+    }
 }
 
 /******************************************************************************
