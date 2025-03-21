@@ -251,4 +251,8 @@ In summary, the `StartTasks()` function creates 1 thread, which is the CLI task 
 
 ## 3.Debug Logger Module
 
-![Debug logger](images/Debug-logger.png)
+[Debug Logger Module](Debug%20Logger%20Module/)
+
+## 4. Wiretap the convo
+
+## 5.Complete the CLI
