@@ -1,49 +1,50 @@
 # a07g-exploring-the-CLI
 
-* Team Number: T16 
+* Team Number: T16
 * Team Name: Slap Queen
 * Team Members: Tianle Chen & Sitong Li
 * GitHub Repository URL: https://github.com/ese5160/final-project-a07g-a14g-t16-slap-queen.git
 * Description of test hardware: (development boards, sensors, actuators, laptop + OS, etc)
 
-
 ## 1. Updated Hardware and Software Requirements Specification (HRS & SRS)
 
 ### Hardware Requirements Specification (HRS)
+
 - **Main Controller**: ATSAMW25H18-MR210PB1952 MCU and Wi-Fi module
 - **Sensor System**:
-   - MAX31855JASA+ temperature sensor, connected via SPI interface
-   - VEML7700-TR light intensity sensor, connected via I2C interface
+  - MAX31855JASA+ temperature sensor, connected via SPI interface
+  - VEML7700-TR light intensity sensor, connected via I2C interface
 - **Actuators**:
-   - COM-11288 heating pad, controlled via PWM
-   - BL-HBXJXGX32L blue LED, controlled via PWM
+  - COM-11288 heating pad, controlled via PWM
+  - BL-HBXJXGX32L blue LED, controlled via PWM
 - **Display System**: Adafruit 326 OLED monitor, connected via I2C interface
 - **Power System**:
-   - BQ24075 power management IC, supporting USB (5V/1.5A) and Li-Ion battery (3.7V/2200mAh) dual input
-   - TPS631010 Buck-Boost converter, providing 5V/825mA power to the heating pad
-   - TPS628438DRL Buck converter, providing 3.3V/167mA power to MCU and peripherals
+  - BQ24075 power management IC, supporting USB (5V/1.5A) and Li-Ion battery (3.7V/2200mAh) dual input
+  - TPS631010 Buck-Boost converter, providing 5V/825mA power to the heating pad
+  - TPS628438DRL Buck converter, providing 3.3V/167mA power to MCU and peripherals
 
 ### Software Requirements Specification (SRS)
+
 - **System Control Task**:
-   - Responsible for overall system coordination and operation mode control
-   - Handles user interface logic and system state management
-   - Implements state machine control of the diagnostic process
+  - Responsible for overall system coordination and operation mode control
+  - Handles user interface logic and system state management
+  - Implements state machine control of the diagnostic process
 - **Sensor Task**:
-   - Temperature sensor data acquisition and processing (SPI interface)
-   - Light intensity sensor data acquisition and processing (I2C interface)
-   - Sensor data filtering and anomaly detection
+  - Temperature sensor data acquisition and processing (SPI interface)
+  - Light intensity sensor data acquisition and processing (I2C interface)
+  - Sensor data filtering and anomaly detection
 - **Heating Control Task**:
-   - PWM control of heating pad temperature
-   - Implementation of PID temperature control algorithm
-   - Heating safety protection mechanism
+  - PWM control of heating pad temperature
+  - Implementation of PID temperature control algorithm
+  - Heating safety protection mechanism
 - **Display Task**:
-   - OLED display interface updates
-   - System status and measurement results display
-   - User prompt information display
+  - OLED display interface updates
+  - System status and measurement results display
+  - User prompt information display
 - **Wi-Fi Communication Task**:
-   - Establishing connection with remote server
-   - Transmission of diagnostic data
-   - Receiving remote control commands
+  - Establishing connection with remote server
+  - Transmission of diagnostic data
+  - Receiving remote control commands
 
 ### Software Task Block Diagram
 
@@ -67,12 +68,12 @@
 
 ![Wi-Fi Communication Task State Machine](images/Wi-Fi-Task.png)
 
-
 ## 2. Understanding the Starter Code
 
 ### Question 1: InitializeSerialConsole() Function
 
 The `InitializeSerialConsole()` function is responsible for initializing UART communication and associated ring buffers. Specifically, it:
+
 - Initializes receive (RX) and transmit (TX) ring buffers
 - Configures UART (SERCOM4) parameters, setting it to 115200 baud, 8 data bits, no parity, 1 stop bit (8N1)
 - Registers UART read and write callback functions
@@ -90,6 +91,7 @@ cbufTx = circular_buf_init((uint8_t *)txCharacterBuffer, TX_BUFFER_SIZE);
 ```
 
 The ring buffer-related functions and data structures come from the following files:
+
 - `circular_buffer.h` - Defines the ring buffer API interface
 - `circular_buffer.c` - Implements the specific functionality of the ring buffer
 
@@ -115,6 +117,7 @@ char txCharacterBuffer[TX_BUFFER_SIZE]; // For storing characters to be sent
 ```
 
 The size of both arrays is determined by defined constants:
+
 ```c
 #define RX_BUFFER_SIZE 512 // Receive buffer size is 512 bytes
 #define TX_BUFFER_SIZE 512 // Transmit buffer size is 512 bytes
@@ -150,9 +153,11 @@ static void configure_usart_callbacks(void)
 ### Question 5: UART Callback Functions
 
 #### a. A character is received? (RX)
+
 When a character is received, the `usart_read_callback` function is called. This function is marked in the code as "ToDo: Complete this function", and should be implemented to place the received character into the `cbufRx` ring buffer.
 
 #### b. A character has been sent? (TX)
+
 When a character has been sent, the `usart_write_callback` function is called. This function is already implemented and checks if `cbufTx` has more characters to send; if so, it continues sending the next character.
 
 ### Question 6: Callback Function Operations
@@ -160,11 +165,13 @@ When a character has been sent, the `usart_write_callback` function is called. T
 The relationship between callbacks and ring buffers is as follows:
 
 For receiving characters (RX):
+
 - When a character is received via UART, it triggers `usart_read_callback`
 - This callback should store the received character in the `cbufRx` ring buffer
 - Then it should start the next character read to continuously receive characters
 
 For sending characters (TX):
+
 - When characters need to be sent, they are first added to the `cbufTx` ring buffer (via the `SerialConsoleWriteString` function)
 - If the UART transmitter is idle, a character is extracted from the buffer and transmission begins
 - When the character transmission is complete, it triggers `usart_write_callback`
@@ -194,6 +201,7 @@ Application retrieves character from cbufRx using SerialConsoleReadCharacter fun
 ```
 
 Key function calls:
+
 - During initialization: `usart_read_buffer_job(&usart_instance, (uint8_t *)&latestRx, 1);` starts the first read
 - In the callback, latestRx should be added to cbufRx, then `usart_read_buffer_job` should be called again to continue reading
 - SerialConsoleReadCharacter uses `circular_buf_get(cbufRx, (uint8_t *)rxChar)` to retrieve characters from the ring buffer
@@ -225,6 +233,7 @@ Character is displayed on terminal
 ```
 
 Key function calls:
+
 - In SerialConsoleWriteString: `circular_buf_put(cbufTx, string[iter]);` adds characters to the buffer
 - If UART is idle: `circular_buf_get(cbufTx, (uint8_t *)&latestTx);` and `usart_write_buffer_job(&usart_instance, (uint8_t *)&latestTx, 1);` start transmission
 - In the callback: the above two operations are performed again to continue sending the next character
@@ -238,6 +247,7 @@ The `StartTasks()` function is used to initialize various tasks (threads) in the
 3. Prints the heap space size again after creating the CLI task
 
 From the code, it's evident that only one thread is created:
+
 ```c
 if (xTaskCreate(vCommandConsoleTask, "CLI_TASK", CLI_TASK_SIZE, NULL, CLI_PRIORITY, &cliTaskHandle) != pdPASS)
 {
@@ -263,4 +273,4 @@ In summary, the `StartTasks()` function creates 1 thread, which is the CLI task 
 
 ## 6. Add CLI commands
 
-[![Demo Video](https://img.youtube.com/vi/I038hV8yAOc/0.jpg)](https://youtube.com/shorts/I038hV8yAOc?si=eHRCT3kB87sBP3XT)
+Youtube Link: https://youtube.com/shorts/5Ef5rhe56YE
