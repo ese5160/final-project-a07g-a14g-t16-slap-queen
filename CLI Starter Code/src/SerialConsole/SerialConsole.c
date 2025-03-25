@@ -1,53 +1,60 @@
 /**************************************************************************/
 /**
  * @file        SerialConsole.c
- * @ingroup 	Serial Console
- * @brief       This file has the code necessary to run the CLI and Serial Debugger. 
- * 				It initializes an UART channel and uses it to receive command from the user
- *				as well as print debug information.
- * @details     This file has the code necessary to run the CLI and Serial Debugger. 
- * 				It initializes an UART channel and uses it to receive command from the user
- *				as well as print debug information.
+ * @ingroup     Serial Console
+ * @brief       This file contains the code required to run the CLI and Serial Debugger.
+ *              It initializes a UART channel and uses it to receive commands
+ *              from the user and to print debug information.
  *
- *				The code in this file will:
- *				--Initialize a SERCOM port (SERCOM # ) to be an UART channel operating at 115200 baud/second, 8N1
- *				--Register callbacks for the device to read and write characters asynchronously as required by the CLI
- *				--Initialize the CLI and Debug Logger data structures
+ * @details     This file will:
+ *              --Initialize a SERCOM port as a UART channel running at 115200 baud, 8N1
+ *              --Register callbacks for reading/writing characters asynchronously
+ *              --Initialize the CLI and Debug Logger data structures
  *
- *				Usage:
+ * Usage:
+ *      - Call InitializeSerialConsole() at startup.
+ *      - Use SerialConsoleWriteString() to print text.
+ *      - Use LogMessage() to print messages that respect log levels.
  *
- *
- * @copyright
- * @author
- * @date        January 26, 2019
- * @version		0.1
- *****************************************************************************/
+ * @copyright   
+ * @author      
+ * @date        Jan 26, 2019
+ * @version     0.1
+ ****************************************************************************/
 
 /******************************************************************************
  * Includes
  ******************************************************************************/
-#include "SerialConsole.h"
+#include "SerialConsole.h" // Includes circular buffer, FreeRTOS, etc.
+// (Removed #include "CliThread.h" to avoid environment conflicts or missing headers)
 
 /******************************************************************************
  * Defines
  ******************************************************************************/
-#define RX_BUFFER_SIZE 512 ///< Size of character buffer for RX, in bytes
-#define TX_BUFFER_SIZE 512 ///< Size of character buffers for TX, in bytes
+#define RX_BUFFER_SIZE 512 ///< Character buffer size for RX, in bytes
+#define TX_BUFFER_SIZE 512 ///< Character buffer size for TX, in bytes
 
 /******************************************************************************
- * Structures and Enumerations
+ * Global Variables
  ******************************************************************************/
-cbuf_handle_t cbufRx; ///< Circular buffer handler for receiving characters
-cbuf_handle_t cbufTx; ///< Circular buffer handler for transmitting characters
+struct usart_module usart_instance;
 
-char latestRx; ///< Holds the latest character received
-char latestTx; ///< Holds the latest character to be transmitted
+char rxCharacterBuffer[RX_BUFFER_SIZE]; ///< Buffer to store received characters
+char txCharacterBuffer[TX_BUFFER_SIZE]; ///< Buffer to store characters to be transmitted
 
-/******************************************************************************
- * Callback Declarations
- ******************************************************************************/
-void usart_write_callback(struct usart_module *const usart_module); // Callback for when we finish writing characters to UART
-void usart_read_callback(struct usart_module *const usart_module); // Callback for when we finis reading characters from UART
+cbuf_handle_t cbufRx; ///< Circular buffer handle for receiving characters
+cbuf_handle_t cbufTx; ///< Circular buffer handle for transmitting characters
+
+char latestRx; ///< Holds the most recently received character
+char latestTx; ///< Holds the most recently transmitted character
+
+enum eDebugLogLevels currentDebugLevel = LOG_INFO_LVL; ///< Default debug log level
+
+/** 
+ * If your project requires the CLI thread to wait for incoming data,
+ * define a semaphore here and signal it in usart_read_callback() using xSemaphoreGiveFromISR().
+ */
+SemaphoreHandle_t xRxSemaphore = NULL;
 
 /******************************************************************************
  * Local Function Declarations
@@ -56,214 +63,156 @@ static void configure_usart(void);
 static void configure_usart_callbacks(void);
 
 /******************************************************************************
- * Global Variables
+ * Callback Declarations
  ******************************************************************************/
-struct usart_module usart_instance;
-char rxCharacterBuffer[RX_BUFFER_SIZE]; 			   ///< Buffer to store received characters
-char txCharacterBuffer[TX_BUFFER_SIZE]; 			   ///< Buffer to store characters to be sent
-enum eDebugLogLevels currentDebugLevel = LOG_INFO_LVL; ///< Default debug level
+void usart_write_callback(struct usart_module *const usart_module);
+void usart_read_callback(struct usart_module *const usart_module);
 
 /******************************************************************************
  * Global Functions
  ******************************************************************************/
-
-/**
- * @brief Initializes the UART and registers callbacks.
- */
 void InitializeSerialConsole(void)
 {
     // Initialize circular buffers for RX and TX
-	cbufRx = circular_buf_init((uint8_t *)rxCharacterBuffer, RX_BUFFER_SIZE);
+    cbufRx = circular_buf_init((uint8_t *)rxCharacterBuffer, RX_BUFFER_SIZE);
     cbufTx = circular_buf_init((uint8_t *)txCharacterBuffer, TX_BUFFER_SIZE);
 
-    // Configure USART and Callbacks
-	configure_usart();
+    // If the CLI thread is expected to block until data is received, create a semaphore here
+    // and use xSemaphoreGiveFromISR() inside the RX callback to notify it
+    xRxSemaphore = xSemaphoreCreateBinary();
+
+    // Configure USART and register callbacks
+    configure_usart();
     configure_usart_callbacks();
-    NVIC_SetPriority(SERCOM4_IRQn, 10);
 
-    usart_read_buffer_job(&usart_instance, (uint8_t *)&latestRx, 1); // Kicks off constant reading of characters
-
-	// Add any other calls you need to do to initialize your Serial Console
+    // Start asynchronous read (1 byte at a time); usart_read_callback() will be triggered on completion
+    usart_read_buffer_job(&usart_instance, (uint8_t *)&latestRx, 1);
 }
 
-/**
- * @brief Deinitializes the UART.
- */
 void DeinitializeSerialConsole(void)
 {
     usart_disable(&usart_instance);
 }
 
-/**
- * @brief Writes a string to the UART.
- * @param string Pointer to the string to send.
- */
 void SerialConsoleWriteString(char *string)
 {
-    if (string != NULL)
+    if (string == NULL)
     {
-        for (size_t iter = 0; iter < strlen(string); iter++)
-        {
-            circular_buf_put(cbufTx, string[iter]);
-        }
+        return;
+    }
 
-        if (usart_get_job_status(&usart_instance, USART_TRANSCEIVER_TX) == STATUS_OK)
+    // Push all characters into the TX circular buffer
+    for (size_t iter = 0; iter < strlen(string); iter++)
+    {
+        circular_buf_put(cbufTx, (uint8_t)string[iter]);
+    }
+
+    // If USART is not busy, trigger the write immediately
+    if (usart_get_job_status(&usart_instance, USART_TRANSCEIVER_TX) == STATUS_OK)
+    {
+        // Fetch one byte from the buffer and start transmission
+        if (circular_buf_get(cbufTx, (uint8_t *)&latestTx) == 0)
         {
-            circular_buf_get(cbufTx, (uint8_t *)&latestTx); // Perform only if the SERCOM TX is free (not busy)
             usart_write_buffer_job(&usart_instance, (uint8_t *)&latestTx, 1);
         }
     }
 }
 
-/**
- * @brief Reads a character from the RX buffer.
- * @param rxChar Pointer to store the received character.
- * @return -1 if buffer is empty, otherwise the character read.
- */
 int SerialConsoleReadCharacter(uint8_t *rxChar)
 {
+    // If there is thread contention, consider using critical sections or locks
     vTaskSuspendAll();
-    int a = circular_buf_get(cbufRx, (uint8_t *)rxChar);
+    int ret = circular_buf_get(cbufRx, (uint8_t *)rxChar);
     xTaskResumeAll();
-    return a;
+    return ret;
 }
 
-/**
- * @brief Gets the current debug log level.
- * @return The current debug level.
- */
 enum eDebugLogLevels getLogLevel(void)
 {
     return currentDebugLevel;
 }
 
-/**
- * @brief Sets the debug log level.
- * @param debugLevel The debug level to set.
- */
 void setLogLevel(enum eDebugLogLevels debugLevel)
 {
     currentDebugLevel = debugLevel;
 }
 
-/**
- * @brief Logs a message at the given level using a variable argument list.
- * @param[in] level  The log level of this message.
- * @param[in] format A printf-style format string.
- * @param[in] ...    Additional arguments for formatting.
- *
- * If @p level is below the current log level or if the log level is LOG_OFF_LVL,
- * nothing is printed. Otherwise, the message is formatted via vsnprintf and
- * sent out through the serial console.
- */
 void LogMessage(enum eDebugLogLevels level, const char *format, ...)
 {
-	//Check if message meets current logging level
-	if (level < currentDebugLevel || currentDebugLevel == LOG_OFF_LVL)
-	{
-		return;
-	}
-	
-	// Prepare a buffer for the formatted output
-	char buffer[256];
-	memset(buffer, 0, sizeof(buffer));
-	
-	// Format the message with variable arguments
-	va_list args;
-	va_start(args, format);
-	vsnprintf(buffer, sizeof(buffer), format, args);
-	va_end(args);
-	
-	SerialConsoleWriteString(buffer);
-}
+    if (level < currentDebugLevel || currentDebugLevel == LOG_OFF_LVL)
+    {
+        return;
+    }
 
-/*
-COMMAND LINE INTERFACE COMMANDS
-*/
+    char buffer[256];
+    memset(buffer, 0, sizeof(buffer));
+
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    SerialConsoleWriteString(buffer);
+}
 
 /******************************************************************************
  * Local Functions
  ******************************************************************************/
-
-/**************************************************************************/ 
-/**
- * @fn			static void configure_usart(void)
- * @brief		Code to configure the SERCOM "EDBG_CDC_MODULE" to be a UART channel running at 115200 8N1
- * @note
- *****************************************************************************/
 static void configure_usart(void)
 {
-	struct usart_config config_usart;
-	usart_get_config_defaults(&config_usart);
+    struct usart_config config_usart;
+    usart_get_config_defaults(&config_usart);
 
-	config_usart.baudrate = 115200;
-	config_usart.mux_setting = EDBG_CDC_SERCOM_MUX_SETTING;
-	config_usart.pinmux_pad0 = EDBG_CDC_SERCOM_PINMUX_PAD0;
-	config_usart.pinmux_pad1 = EDBG_CDC_SERCOM_PINMUX_PAD1;
-	config_usart.pinmux_pad2 = EDBG_CDC_SERCOM_PINMUX_PAD2;
-	config_usart.pinmux_pad3 = EDBG_CDC_SERCOM_PINMUX_PAD3;
-	while (usart_init(&usart_instance,
-					  EDBG_CDC_MODULE,
-					  &config_usart) != STATUS_OK)
-	{
-	}
+    config_usart.baudrate    = 115200;
+    config_usart.mux_setting = EDBG_CDC_SERCOM_MUX_SETTING;
+    config_usart.pinmux_pad0 = EDBG_CDC_SERCOM_PINMUX_PAD0;
+    config_usart.pinmux_pad1 = EDBG_CDC_SERCOM_PINMUX_PAD1;
+    config_usart.pinmux_pad2 = EDBG_CDC_SERCOM_PINMUX_PAD2;
+    config_usart.pinmux_pad3 = EDBG_CDC_SERCOM_PINMUX_PAD3;
 
-	usart_enable(&usart_instance);
+    while (usart_init(&usart_instance, EDBG_CDC_MODULE, &config_usart) != STATUS_OK)
+    {
+        // Keep trying until successful
+    }
+
+    usart_enable(&usart_instance);
 }
 
-/**************************************************************************/ 
-/**
- * @fn			static void configure_usart_callbacks(void)
- * @brief		Code to register callbacks
- * @note
- *****************************************************************************/
 static void configure_usart_callbacks(void)
 {
-	usart_register_callback(&usart_instance,
-							usart_write_callback,
-							USART_CALLBACK_BUFFER_TRANSMITTED);
-	usart_register_callback(&usart_instance,
-							usart_read_callback,
-							USART_CALLBACK_BUFFER_RECEIVED);
-	usart_enable_callback(&usart_instance, USART_CALLBACK_BUFFER_TRANSMITTED);
-	usart_enable_callback(&usart_instance, USART_CALLBACK_BUFFER_RECEIVED);
+    usart_register_callback(&usart_instance,
+                            usart_write_callback,
+                            USART_CALLBACK_BUFFER_TRANSMITTED);
+    usart_register_callback(&usart_instance,
+                            usart_read_callback,
+                            USART_CALLBACK_BUFFER_RECEIVED);
+
+    usart_enable_callback(&usart_instance, USART_CALLBACK_BUFFER_TRANSMITTED);
+    usart_enable_callback(&usart_instance, USART_CALLBACK_BUFFER_RECEIVED);
 }
 
 /******************************************************************************
  * Callback Functions
  ******************************************************************************/
-
-/**************************************************************************/ 
-/**
- * @fn      void usart_read_callback(struct usart_module *const usart_module)
- * @brief   Callback called when the system finishes receiving all bytes requested from a UART read job.
- * @note    Students must fill out this function to store incoming characters in a ring buffer
- *          and notify the CLI thread that data is available.
- *****************************************************************************/
 void usart_read_callback(struct usart_module *const usart_module)
 {
-    // Put the newly received character (latestRx) into the ring buffer
+    // Place the latest received character into the RX circular buffer
     circular_buf_put(cbufRx, (uint8_t)latestRx);
 
-    // Notify the CLI thread (or any task waiting) via a semaphore
+    // If the CLI thread waits on a semaphore for input, notify it here
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     xSemaphoreGiveFromISR(xRxSemaphore, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 
-    // Re-initiate the next read operation so we continuously receive incoming bytes
+    // Start another read job to keep receiving data
     usart_read_buffer_job(&usart_instance, (uint8_t *)&latestRx, 1);
 }
 
-/**************************************************************************/ 
-/**
- * @fn			void usart_write_callback(struct usart_module *const usart_module)
- * @brief		Callback called when the system finishes sending all the bytes requested from a UART read job
- * @note
- *****************************************************************************/
 void usart_write_callback(struct usart_module *const usart_module)
 {
-	if (circular_buf_get(cbufTx, (uint8_t *)&latestTx) != -1) // Only continue if there are more characters to send
-	{
-		usart_write_buffer_job(&usart_instance, (uint8_t *)&latestTx, 1);
-	}
+    // Continue transmission if there are still bytes in the TX buffer
+    if (circular_buf_get(cbufTx, (uint8_t *)&latestTx) == 0)
+    {
+        usart_write_buffer_job(&usart_instance, (uint8_t *)&latestTx, 1);
+    }
 }
