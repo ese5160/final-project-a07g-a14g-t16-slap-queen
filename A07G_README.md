@@ -255,6 +255,33 @@ In summary, the `StartTasks()` function creates 1 thread, which is the CLI task 
 
 ## 4. Wiretap the convo
 
+### 1. What nets must you attach the logic analyzer to?
+- Looking at how the firmware sets up the UART in SerialConsole.c, I need to connect to the UART TX and RX signal lines. These signal lines transmit serial data between the SAMW25 and the EDBG IC. According to the UART protocol, I need to connect at minimum:
+
+- TX (transmit data line)
+- RX (receive data line)
+- GND (ground line as reference)
+
+### 2. Where on the circuit board can you attach / solder to?
+I can connect the logic analyzer at:
+
+- Test points along the UART communication lines between the SAMW25 and EDBG IC
+- Any exposed pads for the UART pins on the board
+- Direct connection to test pins or debug headers if available
+- Reference the Altium project files for the SAMW25 Xplained dev board to locate the specific UART pin locations
+
+### 3. What are critical settings for the logic analyzer?
+Critical settings for the Saleae Logic 8 when decoding UART include:
+
+- Baud rate: Must match the UART baud rate set in the firmware (typically 9600, 115200, etc.)
+- Data bits: Typically 8 bits
+- Stop bits: Typically 1 bit
+- Parity: Based on firmware settings (typically none)
+- Trigger settings: Can be configured to trigger on the start of data transmission
+- Sampling rate: At least 4x the baud rate to ensure accurate signal capture
+
+- I also need to add the UART analyzer in the Saleae Logic software and configure appropriate capture modes to monitor the complete communication process.
+
 ![logic](images/logic.png)
 
 ## 5.Complete the CLI
